@@ -29,88 +29,87 @@ SOFTWARE.
 #define BAUDRATE 38400
 #define DELAY (1000000L/BAUDRATE)
 
-#define TXHIGH() (PORTB|=0x10)
-#define TXLOW() (PORTB&=~0x10)
+#define TXHIGH() (PORTB |= _BV(PB4))
+#define TXLOW() (PORTB &= ~_BV(PB4))
 
-class Terminal
-{
-const char *xdigit;
+class Terminal {
+	static const char *xdigit;
+
 public:
-  Terminal()
-  {
-    xdigit="0123456789abcdef";
-  }
-  
-  // bit-banged serial output 8N2 format
-  void putc(uint8_t c)
-  {
-    uint8_t i=8;
-    TXLOW();
-    _delay_us(DELAY);
-    while (i--) {
-      if (c&1)
-        TXHIGH();
-      else
-        TXLOW();
-      c>>=1;
-      _delay_us(DELAY);
-    }
-    TXHIGH();
-    _delay_us(DELAY);
-    _delay_us(DELAY);
-  }
-  
-  void puts(const char *s)
-  {
-    while (*s) {
-      putc(*s++);
-    }
-  }
-  
-  uint8_t ready()
-  {
-    return 0; // input not implemented
-  }
-  
-  uint8_t getch()
-  {
-    return 0;
-  }
-  
-  void putn(int32_t n)
-  {
-    if (n<0)
-      n=0-n;
-    if (n>9)
-      putn(n/10);
-    putc((n%10)+'0');
-  }
-  
-  void putx(int16_t x)
-  {
-    putc(xdigit[(x>>12)&15]);
-    putc(xdigit[(x>>8)&15]);
-    putc(xdigit[(x>>4)&15]);
-    putc(xdigit[x&15]);
-  }
+	Terminal()
+	{
+	}
 
-  void clear()
-  {
-    putc('\f');
-  }
-  
-  void home()
-  {
-    putc('\v');
-  }
+	// bit-banged serial output 8N2 format
+	void putc(uint8_t c)
+	{
+		uint8_t i = 8;
+		TXLOW();
+		_delay_us(DELAY);
+		while (i--) {
+			if (c & 1)
+				TXHIGH();
+			else
+				TXLOW();
+			c >>= 1;
+			_delay_us(DELAY);
+		}
+		TXHIGH();
+		_delay_us(DELAY);
+		_delay_us(DELAY);
+	}
 
-  void init()
-  {
-    TXHIGH();
-    clear();
-    clear();
-  }
-    
+	void puts(const char *s)
+	{
+		while (*s)
+			putc(*s++);
+	}
+
+	uint8_t ready()
+	{
+		return 0; // input not implemented
+	}
+
+	uint8_t getch()
+	{
+		return 0;
+	}
+
+	void putn(int32_t n)
+	{
+		if (n < 0) {
+			n = 0 - n;
+			putc('-');
+		}
+		if (n > 9)
+			putn(n / 10);
+		putc((n % 10) + '0');
+	}
+
+	void putx(int16_t x)
+	{
+		putc(xdigit[(x >> 12) & 0x0f]);
+		putc(xdigit[(x >> 8) & 0x0f]);
+		putc(xdigit[(x >> 4) & 0x0f]);
+		putc(xdigit[x & 0x0f]);
+	}
+
+	void clear()
+	{
+		putc('\f');
+	}
+
+	void home()
+	{
+		putc('\v');
+	}
+
+	void init()
+	{
+		TXHIGH();
+		clear();
+		clear();
+	}
 };
 
 #endif
