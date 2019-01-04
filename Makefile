@@ -31,7 +31,7 @@ GCCDEVICE=attiny85
 OBJECTS=tiny_pwm.o
 
 #avrdude options
-FUSES=-U lfuse:w:0xE2:m -U hfuse:w:0xDF:m -U efuse:w:0xff:m 
+FUSES=-U lfuse:w:0xE2:m -U hfuse:w:0xDF:m -U efuse:w:0xff:m
 #-U lock:w:0x3F:m
 DEVICE=t85
 
@@ -50,6 +50,11 @@ OBJCOPY=avr-objcopy
 OBJDUMP=avr-objdump
 SIZE=avr-size
 AVRDUDE=avrdude
+#AVRDUDE_PORT=usb
+#AVRDUDE_PROGRAMMER=usbtiny
+AVRDUDE_PORT=/dev/spidev0.0
+AVRDUDE_PROGRAMMER=linuxspi
+
 REMOVE=rm -f
 LD=avr-g++
 
@@ -60,7 +65,7 @@ CFLAGS=-I. $(INCLUDEDIRS) -g -mmcu=$(GCCDEVICE) -Os \
 
 CXXFLAGS=$(CFLAGS) -fno-exceptions -DF_CPU=$(F_CPU)
 
-LDFLAGS=-Wl,-Map,$(PROJECT).map -mmcu=$(GCCDEVICE) $(LIBRARIES)	
+LDFLAGS=-Wl,-Map,$(PROJECT).map -mmcu=$(GCCDEVICE) $(LIBRARIES)
 
 .PHONY: erase clean
 
@@ -74,7 +79,7 @@ $(PROJECT).elf: $(OBJECTS)
 	$(LD) $(LDFLAGS) -o $@ $?
 	@avr-size $(PROJECT).elf
 	@avr-objdump -S $@ > $(PROJECT).lst
-		
+
 $(PROJECT).hex: $(PROJECT).elf
 	@$(OBJCOPY) -j .text -j .data -O ihex $< $@
 
@@ -82,14 +87,14 @@ $(PROJECT).eep: $(PROJECT).elf
 	@-$(OBJCOPY) -j .eeprom --change-section-lma .eeprom=0 -O ihex $< $@
 
 flash: all $(PROJECT).hex $(PROJECT).eep
-	$(AVRDUDE) -P usb -B 10 -c usbtiny -p $(DEVICE) $(FUSES) -U flash:w:$(PROJECT).hex -U eeprom:w:$(PROJECT).eep
+	$(AVRDUDE) -P $(AVRDUDE_PORT) -B 10 -c $(AVRDUDE_PROGRAMMER) -p $(DEVICE) $(FUSES) -U flash:w:$(PROJECT).hex -U eeprom:w:$(PROJECT).eep
 
 erase:
-	$(AVRDUDE) -P usb -c usbtiny -p $(DEVICE) -e
+	$(AVRDUDE) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER) -p $(DEVICE) -e
 
 clean:
 	@rm -f $(PROJECT).hex $(PROJECT).eep $(PROJECT).elf *.o *~ *.lst *.map
-						 	 		
+
 %.o : %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDEDIRS) -c $< -o $@
 
