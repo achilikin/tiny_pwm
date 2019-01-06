@@ -27,7 +27,7 @@
 #include <avr/wdt.h>
 #include <string.h>
 
-#define TX_PIN  _BV(PB4)
+#define TX_PIN _BV(PB3)
 #include "bb_terminal.hpp"
 
 Terminal terminal;
@@ -38,11 +38,12 @@ const char *Terminal::xdigit = "0123456789ABCDEF";
 // the entire working range up and down (single point calibration)
 //
 #define TEMP_CALIBRATION -3
-#define TEMP_OFFSET    275
-#define TEMP_THRESHOLD  25
+#define TEMP_OFFSET     275
+#define TEMP_LOW   25
+#define TEMP_HIGH  55
 
 #define C2ADC(t) (TEMP_OFFSET + t) // Temperature in Centigrades to ADC value
-#define ADC2C(raw) (raw - TEMP_OFFSET) // ADC value to Temperature in Centigrades 
+#define ADC2C(raw) (raw - TEMP_OFFSET) // ADC value to Temperature in Centigrades
 
 enum ADC_CHANNEL {
 	ADC0, // PB5
@@ -63,32 +64,12 @@ enum ADC_PRESCALER {
 };
 
 enum FANMODE { OFF, STARTUP, FULLSPEED, RUNNING };
-#define FAN_PIN PB1
-#define MIN_DUTY 40
+#define FAN_HALF_PIN PB4
+#define FAN_FULL_PIN PB0
 
-enum PWM_CLOCK {
-	CK0, // stop
-	CK1, // clock
-	CK2, // clock/2
-	CK4, // clock/4
-	CK8, // clock/8
-	CK16, // clock/16
-	CK32, // clock/32
-	CK64, // clock/64
-	CK128, // clock/128
-	CK256, // clock/256
-	CK512, // clock/512
-	CK1024, // clock/1024
-	CK2048, // clock/2048
-	CK4096, // clock/4096
-	CK8192, // clock/8192
-	CK16384, // clock/16384
-};
-
-volatile uint16_t pwm;
 volatile uint8_t  state = STARTUP;
 volatile uint16_t temp, tempacc;
-volatile uint8_t  tempcount, ticks, count;
+volatile uint8_t  tempcount, ticks, count, speed;
 
 // 20 ADC samples are collected and averaged to reduce noise
 // A/D conversion is started from timer interrupts, so the average
@@ -116,44 +97,41 @@ ISR(TIMER0_OVF_vect)
 	// when starting up, give an initial kick at full power
 	case STARTUP:
 		state = FULLSPEED;
-		TCCR1 = 0;  // disconnect PWM
-		PORTB |= _BV(FAN_PIN); // force driver on
+		PORTB |= _BV(FAN_FULL_PIN); // force driver on
 		count = 0;
+		speed = 100;
 		break;
-	// once the fan has spun up, switch over to running normal PWM mode
+	// once the fan has spun up, switch over to normal running mode
 	case FULLSPEED:
 		count++;
-		if (count > 32) {
+		if (count > 32)
 			state = RUNNING;
-			OCR1A = 255; // keep the output high for now
-			// TCCR1 = 0xD1: PWM1A enabled, clear OC1A on compare match, system clock prescaler
-			TCCR1 = _BV(CTC1) | _BV(PWM1A) | _BV(COM1A0) | CK1;
-		}
 		break;
 	// ADC result is roughly 1 count per degC, where 300 equal to 25degC
-	// we want the fan to be off below 25 degC, and run
-	// at full speed at 55 degC or more.
-	// we'll let the fan run at MIN_DUTY% duty cycle at minimum
-	// so the 30 degree difference translates directly to
-	// MIN_DUTY..100% PWM duty cycle
+	// we want the fan to be off below TEMP_LOW degC, and run
+	// at full speed at TEMP_HIGH degC or more.
+	// we'll let the fan run at half speed above TEMP_LOW degC but below TEMP_HIGH degC
 	case RUNNING:
-		if (temp < C2ADC(TEMP_THRESHOLD)) {	// if temperature below threshold
-			pwm = 0;			// then force output low
-			state = OFF;		// and switch to off state
+		if (temp < C2ADC(TEMP_LOW)) {	// if temperature below low threshold
+			PORTB &= ~(_BV(FAN_HALF_PIN) | _BV(FAN_FULL_PIN)); // then force fan to stop
+			state = OFF; // and switch to off state
+			speed = 0;
 		} else {
-			if (temp > C2ADC(55)) {
-				pwm = 255;		// full on above 55 degC
-			} else {
-				pwm = (temp - C2ADC(TEMP_THRESHOLD)) * 2 + MIN_DUTY; // duty cycle %
-				pwm = (pwm * 255) / 100;   // 8 bit PWM scale
+			if (temp > C2ADC(TEMP_HIGH)) {   // if temperature above high threshold
+				PORTB |= _BV(FAN_FULL_PIN);  // force full speed
+				PORTB &= ~_BV(FAN_HALF_PIN);
+				speed = 100;
+			} else if (temp < C2ADC(TEMP_HIGH - 2)){
+				PORTB |= _BV(FAN_HALF_PIN); // only half speed below TEMP_HIGH
+				PORTB &= ~_BV(FAN_FULL_PIN);
+				speed = 50;
 			}
 		}
-		OCR1A = pwm; // update duty cycle
 		break;
 		// in off state just watch the temperature
 		// and if it rises above threshold then start again
 	case OFF:
-		if (temp > C2ADC(TEMP_THRESHOLD + 2))
+		if (temp > C2ADC(TEMP_LOW + 2))
 			state = STARTUP;
 		break;
 	}
@@ -166,21 +144,21 @@ ISR(WDT_vect)
 }
 
 /*
-I/O configuration                               DDR  PORT
----------------------------------------------------------
-PB0 unused                            input       0     1
-PB1 FAN (active high)                 output      1     0
-PB2 unused                            input       0     1
-PB3 unused                            input       0     1
-PB4 serial out                        output      1     1
+  I/O configuration                               DDR  PORT
+  ---------------------------------------------------------
+  PB0 FAN full speed (active high)      output      1     0
+  PB1 unused                            input       0     1
+  PB2 unused                            input       0     1
+  PB3 serial out                        output      1     1
+  PB4 FAN half speed (active high)      output      1     0
 */
 int main(void)
 {
 	MCUSR = 0;
 	// initial values for PBx pins
-	PORTB = _BV(PB4) | _BV(PB3) | _BV(PB2) | _BV(PB0);
-	// PBx direction, 4 and 1 as output
-	DDRB = _BV(DDB4) | _BV(DDB1);
+	PORTB = _BV(PB1) | _BV(PB2) | _BV(PB3);
+	// PBx direction, 0, 3 and 4 as outputs
+	DDRB = _BV(DDB0) | _BV(DDB3) | _BV(DDB4);
 
 	// configure timer0 for periodic interrupts on overflow
 	TCCR0A = 0;
@@ -196,7 +174,8 @@ int main(void)
 
 	// configure watchdog
 	WDTCR = _BV(WDE) | _BV(WDCE);
-	WDTCR = _BV(WDE) | _BV(WDIE) | _BV(WDP2) | _BV(WDP1) | _BV(WDP0); // 2sec timeout, interrupt+reset
+	// 2sec timeout, interrupt+reset
+	WDTCR = _BV(WDE) | _BV(WDIE) | _BV(WDP2) | _BV(WDP1) | _BV(WDP0);
 
 	set_sleep_mode(SLEEP_MODE_IDLE);
 	sleep_enable();
@@ -205,7 +184,8 @@ int main(void)
 	while (1) {
 		sleep_cpu();
 		wdt_reset();
-		WDTCR = _BV(WDIE) | _BV(WDP2) | _BV(WDP1) | _BV(WDP0); // 2sec timeout, interrupt+reset
+		// 2sec timeout, interrupt+reset
+		WDTCR = _BV(WDIE) | _BV(WDP2) | _BV(WDP1) | _BV(WDP0);
 		if (ticks > 32) {
 			ticks = 0;
 			uint16_t raw = temp - TEMP_CALIBRATION;
@@ -215,8 +195,9 @@ int main(void)
 			terminal.putn(temp);
 			terminal.puts(" T:");
 			terminal.putn(ADC2C(temp));
-			terminal.puts(" PWM:");
-			terminal.putn(pwm);
+			terminal.puts(" Speed:");
+			terminal.putn(speed);
+			terminal.puts(" %");
 		}
 	}
 }
