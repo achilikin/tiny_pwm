@@ -1,25 +1,25 @@
 /*
-MIT License
+  MIT License
 
-Copyright (c) 2016 Madis Kaal
+  Copyright (c) 2016 Madis Kaal
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
 */
 #include <avr/interrupt.h>
 #include <util/delay.h>
@@ -27,6 +27,7 @@ SOFTWARE.
 #include <avr/wdt.h>
 #include <string.h>
 
+#define TX_PIN  _BV(PB4)
 #include "bb_terminal.hpp"
 
 Terminal terminal;
@@ -34,14 +35,32 @@ const char *Terminal::xdigit = "0123456789ABCDEF";
 
 // calibration value is added to temperature reading to make
 // ADC readout 300 equal to 25degC. Or you can use it to shift
-// the entire working range up and down
+// the entire working range up and down (single point calibration)
 //
-#define TEMP_CALIBRATION 2
+#define TEMP_CALIBRATION -3
 #define TEMP_OFFSET    275
 #define TEMP_THRESHOLD  25
 
 #define C2ADC(t) (TEMP_OFFSET + t) // Temperature in Centigrades to ADC value
 #define ADC2C(raw) (raw - TEMP_OFFSET) // ADC value to Temperature in Centigrades 
+
+enum ADC_CHANNEL {
+	ADC0, // PB5
+	ADC1, // PB2
+	ADC2, // PB4
+	ADC3, // PB3
+	ADC4 = 0x0F // Temperature sensor
+};
+
+enum ADC_PRESCALER {
+	ADCPS2 = 1,
+	ADCPS4,
+	ADCPS8,
+	ADCPS16,
+	ADCPS32,
+	ADCPS64,
+	ADCPS128,
+};
 
 enum FANMODE { OFF, STARTUP, FULLSPEED, RUNNING };
 #define FAN_PIN PB1
@@ -139,7 +158,7 @@ ISR(TIMER0_OVF_vect)
 		break;
 	}
 	// start next ADC conversion, this will finish faster than the next timer interrupt
-	ADCSRA = _BV(ADEN) | _BV(ADSC) | _BV(ADIF) | _BV(ADIE) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
+	ADCSRA = _BV(ADEN) | _BV(ADSC) | _BV(ADIF) | _BV(ADIE) | ADCPS128;
 }
 
 ISR(WDT_vect)
@@ -171,9 +190,9 @@ int main(void)
 
 	// configure ADC to read temperature
 	// ADMUC = 0x8f: 1.1V internal reference, temperature sensor channel
-	ADMUX = _BV(REFS1) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1) | _BV(MUX0);
+	ADMUX = _BV(REFS1) | ADC4;
 	// ADCSRA = 0xdf: start conversion with prescaler 128
-	ADCSRA = _BV(ADEN) | _BV(ADSC) | _BV(ADIF) | _BV(ADIE) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
+	ADCSRA = _BV(ADEN) | _BV(ADSC) | _BV(ADIF) | _BV(ADIE) | ADCPS128;
 
 	// configure watchdog
 	WDTCR = _BV(WDE) | _BV(WDCE);
