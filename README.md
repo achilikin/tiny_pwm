@@ -6,7 +6,7 @@ See project page at http://www.nomad.ee/micros/tiny_pwm/
 
 # tiny_fan: modified for Ruideng power supply case with 5V fan.
 
-See project page at http://achilikin.blogspot.com/2019/01/making-simple-power-bank.html
+See project page at [Making Ruideng DPH5005 Power Supply Case Silent](https://achilikin.blogspot.com/2019/01/making-roudeng-dph5005-power-supply.html)
 
 Instead of PWM, simple voltage limiting circuit is used, so fan can be in one of three states:
 * OFF
